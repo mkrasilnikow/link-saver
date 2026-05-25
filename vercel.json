@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/webhook.py": { "runtime": "python3.11", "maxDuration": 10 },
+    "api/export.py":  { "runtime": "python3.11", "maxDuration": 30 }
+  },
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/" }
+  ]
+}
