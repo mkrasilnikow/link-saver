@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/webhook.py": { "runtime": "python3.11", "maxDuration": 10 },
-    "api/export.py":  { "runtime": "python3.11", "maxDuration": 30 }
+    "api/webhook.py": { "maxDuration": 10 },
+    "api/export.py":  { "maxDuration": 30 }
   }
 }
