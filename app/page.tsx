@@ -13,6 +13,7 @@ interface Link {
   thumbnail: string | null;
   type: string;
   tags: string[];
+  folder: string | null;
   status: string;
   source: string;
   created_at: string;
@@ -22,6 +23,7 @@ export default function Home() {
   const [links, setLinks] = useState<Link[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -35,6 +37,7 @@ export default function Home() {
     setLoading(true);
     const params = new URLSearchParams();
     if (activeTag) params.set("tag", activeTag);
+    if (activeFolder) params.set("folder", activeFolder);
     if (statusFilter) params.set("status", statusFilter);
     if (debouncedSearch) params.set("search", debouncedSearch);
 
@@ -42,20 +45,29 @@ export default function Home() {
     const data = await res.json();
     setLinks(Array.isArray(data) ? data : []);
     setLoading(false);
-  }, [activeTag, statusFilter, debouncedSearch]);
+  }, [activeTag, activeFolder, statusFilter, debouncedSearch]);
 
-  useEffect(() => {
-    fetchLinks();
-  }, [fetchLinks]);
+  useEffect(() => { fetchLinks(); }, [fetchLinks]);
 
+  // Build tag list from current results
   const allTags = links.reduce<Record<string, number>>((acc, link) => {
     (link.tags || []).forEach((t) => { acc[t] = (acc[t] || 0) + 1; });
     return acc;
   }, {});
-
   const tagList = Object.entries(allTags)
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count);
+
+  // Build folder list from current results
+  const allFolders = links.reduce<Record<string, number>>((acc, link) => {
+    if (link.folder) acc[link.folder] = (acc[link.folder] || 0) + 1;
+    return acc;
+  }, {});
+  const folderList = Object.entries(allFolders)
+    .map(([folder, count]) => ({ folder, count }))
+    .sort((a, b) => a.folder.localeCompare(b.folder));
+
+  const allFolderNames = folderList.map((f) => f.folder);
 
   const handleStatusChange = async (id: string, status: string) => {
     await fetch("/api/links", {
@@ -66,10 +78,29 @@ export default function Home() {
     fetchLinks();
   };
 
+  const handleFolderChange = async (id: string, folder: string | null) => {
+    await fetch("/api/links", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, folder: folder ?? "" }),
+    });
+    fetchLinks();
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Удалить ссылку?")) return;
     await fetch(`/api/links?id=${id}`, { method: "DELETE" });
     fetchLinks();
+  };
+
+  const handleSelectFolder = (folder: string | null) => {
+    setActiveFolder(folder);
+    setActiveTag(null);
+  };
+
+  const handleSelectTag = (tag: string | null) => {
+    setActiveTag(tag);
+    setActiveFolder(null);
   };
 
   return (
@@ -101,7 +132,14 @@ export default function Home() {
       </header>
 
       <div className="flex gap-8 flex-col md:flex-row">
-        <TagFilter tags={tagList} activeTag={activeTag} onSelect={setActiveTag} />
+        <TagFilter
+          tags={tagList}
+          folders={folderList}
+          activeTag={activeTag}
+          activeFolder={activeFolder}
+          onSelectTag={handleSelectTag}
+          onSelectFolder={handleSelectFolder}
+        />
 
         <main className="flex-1">
           {loading ? (
@@ -122,7 +160,9 @@ export default function Home() {
                 <LinkCard
                   key={link.id}
                   link={link}
+                  folders={allFolderNames}
                   onStatusChange={handleStatusChange}
+                  onFolderChange={handleFolderChange}
                   onDelete={handleDelete}
                 />
               ))}
