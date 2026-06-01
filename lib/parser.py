@@ -3,6 +3,7 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 
 load_dotenv()
 
@@ -12,10 +13,36 @@ YOUTUBE_REGEX = re.compile(
 )
 YOUTUBE_BOILERPLATE = "About Press Copyright Contact us Creators Advertise"
 
-
 MAX_CONTENT_CHARS = 6000
 NOISE_TAGS = ["script", "style", "noscript", "nav", "header", "footer",
               "aside", "form", "svg", "iframe", "button"]
+
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "sec-ch-ua": '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "document",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-site": "none",
+    "sec-fetch-user": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+def _fallback_title(url: str) -> str:
+    try:
+        host = urlparse(url).hostname or url
+        return host.removeprefix("www.")
+    except Exception:
+        return url[:80]
 
 
 def _extract_video_id(url: str) -> str | None:
@@ -24,17 +51,14 @@ def _extract_video_id(url: str) -> str | None:
 
 
 def _extract_article_text(soup: BeautifulSoup) -> str:
-    """Pull the main readable body text from a page for richer tagging."""
     for tag in soup(NOISE_TAGS):
         tag.decompose()
 
-    # Prefer semantic containers, fall back to the whole body.
     container = soup.find("article") or soup.find("main") or soup.body or soup
 
     paragraphs = [p.get_text(" ", strip=True) for p in container.find_all("p")]
     text = " ".join(p for p in paragraphs if len(p) > 30)
 
-    # If a page barely uses <p> (SPA, docs), fall back to full container text.
     if len(text) < 200:
         text = container.get_text(" ", strip=True)
 
@@ -74,17 +98,20 @@ def _parse_youtube(url: str) -> dict:
 
 
 def _parse_web(url: str) -> dict:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/125.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
-    }
     try:
-        response = httpx.get(url, headers=headers, follow_redirects=True, timeout=10)
+        response = httpx.get(url, headers=_BROWSER_HEADERS, follow_redirects=True, timeout=10)
+
+        if response.status_code in (401, 403, 429):
+            return {
+                "title": _fallback_title(url),
+                "description": "",
+                "content": "",
+                "thumbnail": "",
+                "type": "other",
+                "source": "web",
+                "error": f"HTTP {response.status_code}",
+            }
+
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -117,7 +144,7 @@ def _parse_web(url: str) -> dict:
         }
     except Exception as e:
         return {
-            "title": "",
+            "title": _fallback_title(url),
             "description": "",
             "content": "",
             "thumbnail": "",
@@ -129,12 +156,9 @@ def _parse_web(url: str) -> dict:
 
 def parse_url(url: str) -> dict:
     if "youtube.com" in url or "youtu.be" in url:
-        # Community posts have no video ID — parse as web but mark as video source
         if "/post/" in url:
             result = _parse_web(url)
             result["source"] = "youtube"
-            # og:title for community posts is usually "Post from <channel>" — try to
-            # enrich with channel name from the URL path or page if title is generic
             return result
         return _parse_youtube(url)
     return _parse_web(url)
