@@ -42,6 +42,7 @@ def handle_url(chat_id: int, url: str) -> None:
     tagged = get_tags_and_type(
         parsed.get("title", ""),
         parsed.get("description", ""),
+        parsed.get("content", ""),
         parsed.get("type", ""),
     )
 
