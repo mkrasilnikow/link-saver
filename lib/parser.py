@@ -10,6 +10,7 @@ YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 YOUTUBE_REGEX = re.compile(
     r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([A-Za-z0-9_-]{11})"
 )
+YOUTUBE_BOILERPLATE = "About Press Copyright Contact us Creators Advertise"
 
 
 MAX_CONTENT_CHARS = 6000
@@ -95,6 +96,8 @@ def _parse_web(url: str) -> dict:
 
         thumbnail = og("image")
         content = _extract_article_text(soup)
+        if content.startswith(YOUTUBE_BOILERPLATE):
+            content = ""
 
         source = "web"
         if "instagram.com" in url:
@@ -122,5 +125,12 @@ def _parse_web(url: str) -> dict:
 
 def parse_url(url: str) -> dict:
     if "youtube.com" in url or "youtu.be" in url:
+        # Community posts have no video ID — parse as web but mark as video source
+        if "/post/" in url:
+            result = _parse_web(url)
+            result["source"] = "youtube"
+            # og:title for community posts is usually "Post from <channel>" — try to
+            # enrich with channel name from the URL path or page if title is generic
+            return result
         return _parse_youtube(url)
     return _parse_web(url)
