@@ -7,17 +7,20 @@ load_dotenv()
 
 _client: Groq | None = None
 
+MAX_PROMPT_CHARS = 6000
+
 SYSTEM_PROMPT = """
-You are a content classifier. Given a title and description of a web page or video,
+You are a content classifier. Given the title and body text of a web page or video,
 return ONLY valid JSON with no explanation.
 
 Response format:
 {"tags": ["tag1", "tag2"], "type": "article|video|reel|other"}
 
 Rules:
-- tags: 1-5 lowercase tags, in the same language as the content (Russian or English)
-- type: "video" for YouTube/video content, "reel" for short-form, "article" for text, "other" otherwise
-- tags should be topic-based: технологии, java, spring, игры, gamedev, дизайн, etc.
+- Read the provided body text carefully and base the tags on what the content is actually about.
+- tags: 1-5 specific, lowercase, topic-based tags in the same language as the content (Russian or English).
+  Prefer concrete topics (java, spring, postgresql, нейросети, геймдизайн) over generic ones (программирование, технологии).
+- type: "video" for YouTube/video content, "reel" for short-form, "article" for text articles, "other" otherwise.
 """
 
 
@@ -28,12 +31,20 @@ def _get_client() -> Groq:
     return _client
 
 
-def get_tags_and_type(title: str, description: str, content_type_hint: str = "") -> dict:
+def get_tags_and_type(
+    title: str,
+    description: str,
+    content: str = "",
+    content_type_hint: str = "",
+) -> dict:
     client = _get_client()
 
-    user_content = f"Title: {title}\nDescription: {description[:800]}"
+    # Prefer the full article body; fall back to the meta description.
+    body = content.strip() or description.strip()
+
+    user_content = f"Title: {title}\n\nBody:\n{body[:MAX_PROMPT_CHARS]}"
     if content_type_hint:
-        user_content += f"\nContent type hint: {content_type_hint}"
+        user_content += f"\n\nContent type hint: {content_type_hint}"
 
     try:
         response = client.chat.completions.create(

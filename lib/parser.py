@@ -12,9 +12,33 @@ YOUTUBE_REGEX = re.compile(
 )
 
 
+MAX_CONTENT_CHARS = 6000
+NOISE_TAGS = ["script", "style", "noscript", "nav", "header", "footer",
+              "aside", "form", "svg", "iframe", "button"]
+
+
 def _extract_video_id(url: str) -> str | None:
     match = YOUTUBE_REGEX.search(url)
     return match.group(1) if match else None
+
+
+def _extract_article_text(soup: BeautifulSoup) -> str:
+    """Pull the main readable body text from a page for richer tagging."""
+    for tag in soup(NOISE_TAGS):
+        tag.decompose()
+
+    # Prefer semantic containers, fall back to the whole body.
+    container = soup.find("article") or soup.find("main") or soup.body or soup
+
+    paragraphs = [p.get_text(" ", strip=True) for p in container.find_all("p")]
+    text = " ".join(p for p in paragraphs if len(p) > 30)
+
+    # If a page barely uses <p> (SPA, docs), fall back to full container text.
+    if len(text) < 200:
+        text = container.get_text(" ", strip=True)
+
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:MAX_CONTENT_CHARS]
 
 
 def _parse_youtube(url: str) -> dict:
@@ -38,6 +62,7 @@ def _parse_youtube(url: str) -> dict:
         return {
             "title": snippet.get("title", ""),
             "description": snippet.get("description", "")[:500],
+            "content": "",
             "thumbnail": snippet.get("thumbnails", {}).get("maxres", {}).get("url")
                 or snippet.get("thumbnails", {}).get("high", {}).get("url", ""),
             "type": "reel" if is_short else "video",
@@ -69,6 +94,7 @@ def _parse_web(url: str) -> dict:
             description = meta_desc.get("content", "") if meta_desc else ""
 
         thumbnail = og("image")
+        content = _extract_article_text(soup)
 
         source = "web"
         if "instagram.com" in url:
@@ -77,6 +103,7 @@ def _parse_web(url: str) -> dict:
         return {
             "title": title[:500],
             "description": description[:1000],
+            "content": content,
             "thumbnail": thumbnail,
             "type": "other",
             "source": source,
@@ -85,6 +112,7 @@ def _parse_web(url: str) -> dict:
         return {
             "title": "",
             "description": "",
+            "content": "",
             "thumbnail": "",
             "type": "other",
             "source": "web",
