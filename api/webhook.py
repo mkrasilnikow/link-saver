@@ -1,8 +1,6 @@
 import os
+import re
 import json
-import asyncio
-import hashlib
-import hmac
 from http.server import BaseHTTPRequestHandler
 
 import httpx
@@ -15,6 +13,31 @@ WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
 
 TG_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+
+URL_REGEX = re.compile(r"https?://[^\s]+")
+# Trailing chars that are usually punctuation/wrappers, not part of the URL.
+_TRAILING_JUNK = ").,;!?'\"<>»"
+
+
+def extract_url(text: str) -> str | None:
+    """Find the first URL anywhere in a message and strip wrapping punctuation.
+
+    Handles plain text around the link and Telegram's default
+    'some text (https://...)' insertion format.
+    """
+    match = URL_REGEX.search(text)
+    if not match:
+        return None
+
+    url = match.group(0)
+    while url and url[-1] in _TRAILING_JUNK:
+        # Keep a trailing ')' if it belongs to a balanced pair inside the URL
+        # itself, e.g. .../wiki/Spring_(framework)
+        if url[-1] == ")" and url.count("(") >= url.count(")"):
+            break
+        url = url[:-1]
+
+    return url or None
 
 
 def send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> None:
@@ -151,10 +174,13 @@ def process_update(update: dict) -> None:
 
     if text.startswith("/"):
         handle_command(chat_id, text)
-    elif text.startswith("http://") or text.startswith("https://"):
+        return
+
+    url = extract_url(text)
+    if url:
         send_message(chat_id, "⏳ Обрабатываю...")
         try:
-            handle_url(chat_id, text)
+            handle_url(chat_id, url)
         except Exception as e:
             send_message(chat_id, f"❌ Ошибка при обработке ссылки: {e}")
     else:
