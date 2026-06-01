@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 interface Link {
   id: string;
   url: string;
@@ -8,6 +10,7 @@ interface Link {
   thumbnail: string | null;
   type: string;
   tags: string[];
+  folder: string | null;
   status: string;
   source: string;
   created_at: string;
@@ -15,7 +18,9 @@ interface Link {
 
 interface Props {
   link: Link;
+  folders: string[];
   onStatusChange: (id: string, status: string) => void;
+  onFolderChange: (id: string, folder: string | null) => void;
   onDelete: (id: string) => void;
 }
 
@@ -33,13 +38,22 @@ const TYPE_COLORS: Record<string, string> = {
   other: "bg-gray-100 text-gray-600",
 };
 
-export default function LinkCard({ link, onStatusChange, onDelete }: Props) {
+export default function LinkCard({ link, folders, onStatusChange, onFolderChange, onDelete }: Props) {
   const isRead = link.status === "read";
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [newFolder, setNewFolder] = useState("");
+
   const formattedDate = new Date(link.created_at).toLocaleDateString("ru-RU", {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
+
+  const handleFolderSubmit = (folder: string | null) => {
+    onFolderChange(link.id, folder);
+    setShowFolderPicker(false);
+    setNewFolder("");
+  };
 
   return (
     <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col transition-opacity ${isRead ? "opacity-60" : ""}`}>
@@ -81,6 +95,64 @@ export default function LinkCard({ link, onStatusChange, onDelete }: Props) {
             ))}
           </div>
         )}
+
+        {/* Folder badge + picker */}
+        <div className="relative">
+          <button
+            onClick={() => setShowFolderPicker(!showFolderPicker)}
+            className="text-xs text-gray-500 hover:text-blue-500 flex items-center gap-1 transition-colors"
+          >
+            {link.folder ? (
+              <><span>📁</span><span className="font-medium">{link.folder}</span></>
+            ) : (
+              <span className="text-gray-300 hover:text-blue-400">+ папка</span>
+            )}
+          </button>
+
+          {showFolderPicker && (
+            <div className="absolute left-0 top-full mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 min-w-40">
+              {folders.length > 0 && (
+                <ul className="mb-2">
+                  {folders.map((f) => (
+                    <li key={f}>
+                      <button
+                        onClick={() => handleFolderSubmit(f)}
+                        className="w-full text-left text-xs px-2 py-1 hover:bg-blue-50 rounded"
+                      >
+                        📁 {f}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  placeholder="Новая папка"
+                  value={newFolder}
+                  onChange={(e) => setNewFolder(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && newFolder.trim() && handleFolderSubmit(newFolder.trim())}
+                  className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  autoFocus
+                />
+                <button
+                  onClick={() => newFolder.trim() && handleFolderSubmit(newFolder.trim())}
+                  className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+                >
+                  ОК
+                </button>
+              </div>
+              {link.folder && (
+                <button
+                  onClick={() => handleFolderSubmit(null)}
+                  className="w-full text-left text-xs text-red-400 hover:text-red-600 px-2 py-1 mt-1"
+                >
+                  Убрать из папки
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center justify-between mt-auto pt-2">
           <span className="text-xs text-gray-400">{formattedDate}</span>

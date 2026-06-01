@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const tag = searchParams.get("tag");
   const status = searchParams.get("status");
+  const folder = searchParams.get("folder");
   const search = searchParams.get("search");
   const limit = parseInt(searchParams.get("limit") || "50");
 
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
 
   if (tag) query = query.contains("tags", [tag]);
   if (status) query = query.eq("status", status);
+  if (folder) query = query.eq("folder", folder);
   if (search) query = query.textSearch("fts", search);
 
   const { data, error } = await query;
@@ -26,15 +28,21 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { id, status } = body;
+  const { id, status, folder } = body;
 
-  if (!id || !status) {
-    return NextResponse.json({ error: "id and status required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const update: Record<string, string> = {};
+  if (status !== undefined) update.status = status;
+  if (folder !== undefined) update.folder = folder;
+
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ error: "nothing to update" }, { status: 400 });
   }
 
   const { data, error } = await supabase
     .from("links")
-    .update({ status })
+    .update(update)
     .eq("id", id)
     .select()
     .single();

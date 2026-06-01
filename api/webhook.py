@@ -15,29 +15,65 @@ ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
 TG_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 URL_REGEX = re.compile(r"https?://[^\s]+")
-# Trailing chars that are usually punctuation/wrappers, not part of the URL.
+UUID_REGEX = re.compile(r"id:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", re.I)
 _TRAILING_JUNK = ").,;!?'\"<>»"
 
 
 def extract_url(text: str) -> str | None:
-    """Find the first URL anywhere in a message and strip wrapping punctuation.
-
-    Handles plain text around the link and Telegram's default
-    'some text (https://...)' insertion format.
-    """
+    """Find the first URL anywhere in the message, stripping wrapping punctuation."""
     match = URL_REGEX.search(text)
     if not match:
         return None
-
     url = match.group(0)
     while url and url[-1] in _TRAILING_JUNK:
-        # Keep a trailing ')' if it belongs to a balanced pair inside the URL
-        # itself, e.g. .../wiki/Spring_(framework)
         if url[-1] == ")" and url.count("(") >= url.count(")"):
             break
         url = url[:-1]
-
     return url or None
+
+
+def extract_link_id(text: str) -> str | None:
+    """Extract the embedded link UUID from a bot confirmation message."""
+    match = UUID_REGEX.search(text)
+    return match.group(1) if match else None
+
+
+def parse_reply_action(text: str) -> dict:
+    """Parse a reply to a save confirmation.
+
+    Supported formats (case-insensitive, combinable):
+      +                     → mark as read
+      openai, ai            → add tags
+      : ai                  → set folder
+      openai, ai : tech     → add tags + set folder
+      + : tech              → mark as read + set folder
+    """
+    text = text.strip()
+    action: dict = {}
+
+    # Split off folder part (everything after the first ':')
+    folder_part = ""
+    if ":" in text:
+        idx = text.index(":")
+        folder_part = text[idx + 1:].strip().lower()
+        text = text[:idx].strip()
+
+    if folder_part:
+        action["folder"] = folder_part
+
+    # Process left side: check for '+' token and tags
+    tokens = [t.strip().lstrip("#") for t in re.split(r"[,\s]+", text) if t.strip()]
+    tags = []
+    for token in tokens:
+        if token == "+":
+            action["read"] = True
+        elif token:
+            tags.append(token.lower())
+
+    if tags:
+        action["tags"] = tags
+
+    return action
 
 
 def send_message(chat_id: int, text: str, parse_mode: str = "HTML") -> None:
@@ -53,7 +89,16 @@ def format_link_confirmation(link: dict) -> str:
     type_labels = {"article": "статья", "video": "видео", "reel": "reels", "other": "другое"}
     type_label = type_labels.get(link.get("type", "other"), "другое")
     title = link.get("title") or link.get("url", "")
-    return f"✅ <b>{title[:100]}</b>\n🏷 {tag_str}\n📌 Тип: {type_label}"
+    folder = link.get("folder")
+    folder_line = f"\n📁 {folder}" if folder else ""
+    # Embed ID so replies can reference this link; shown as small code block.
+    link_id = link.get("id", "")
+    return (
+        f"✅ <b>{title[:100]}</b>\n"
+        f"🏷 {tag_str}\n"
+        f"📌 Тип: {type_label}{folder_line}\n"
+        f"<code>id:{link_id}</code>"
+    )
 
 
 def handle_url(chat_id: int, url: str) -> None:
@@ -86,6 +131,40 @@ def handle_url(chat_id: int, url: str) -> None:
     send_message(chat_id, format_link_confirmation({**link_data, **saved}))
 
 
+def handle_reply(chat_id: int, reply_text: str, original_text: str) -> None:
+    """Handle a reply to a save confirmation message."""
+    from lib import storage
+
+    link_id = extract_link_id(original_text)
+    if not link_id:
+        return
+
+    action = parse_reply_action(reply_text)
+    if not action:
+        send_message(chat_id, "Не понял действие. Примеры: тег1, тег2 / + / : папка")
+        return
+
+    parts = []
+
+    if action.get("tags"):
+        storage.update_link_tags(link_id, action["tags"])
+        added = " ".join(f"#{t}" for t in action["tags"])
+        parts.append(f"🏷 Теги добавлены: {added}")
+
+    if action.get("folder"):
+        storage.update_link_folder(link_id, action["folder"])
+        parts.append(f"📁 Папка: {action['folder']}")
+
+    if action.get("read"):
+        storage.update_link_status(link_id, "read")
+        parts.append("✅ Отмечено как прочитанное")
+
+    if parts:
+        send_message(chat_id, "\n".join(parts))
+    else:
+        send_message(chat_id, "Не понял действие. Примеры: тег1, тег2 / + / : папка")
+
+
 def handle_command(chat_id: int, text: str) -> None:
     from lib import storage
 
@@ -103,7 +182,12 @@ def handle_command(chat_id: int, text: str) -> None:
         for lnk in links:
             status_icon = "📖" if lnk.get("status") == "read" else "🔖"
             tags = " ".join(f"#{t}" for t in (lnk.get("tags") or []))
-            lines.append(f'{status_icon} <a href="{lnk["url"]}">{(lnk.get("title") or lnk["url"])[:60]}</a>\n   {tags}\n   <code>{lnk["id"]}</code>')
+            folder = f"📁 {lnk['folder']}" if lnk.get("folder") else ""
+            lines.append(
+                f'{status_icon} <a href="{lnk["url"]}">{(lnk.get("title") or lnk["url"])[:60]}</a>\n'
+                f"   {tags} {folder}\n"
+                f"   <code>{lnk['id']}</code>"
+            )
         send_message(chat_id, "\n\n".join(lines))
 
     elif cmd == "/search":
@@ -125,6 +209,14 @@ def handle_command(chat_id: int, text: str) -> None:
         lines = [f"#{t['tag']} — {t['count']}" for t in tags]
         send_message(chat_id, "\n".join(lines))
 
+    elif cmd == "/folders":
+        folders = storage.get_folders()
+        if not folders:
+            send_message(chat_id, "Папок пока нет.")
+            return
+        lines = [f"📁 {f['folder']} — {f['count']}" for f in folders]
+        send_message(chat_id, "\n".join(lines))
+
     elif cmd == "/read":
         if not arg:
             send_message(chat_id, "Использование: /read <id>")
@@ -142,14 +234,20 @@ def handle_command(chat_id: int, text: str) -> None:
     elif cmd == "/start" or cmd == "/help":
         help_text = (
             "📚 <b>LinkSaver Bot</b>\n\n"
-            "Отправь URL — я сохраню и автоматически расставлю теги.\n\n"
+            "Отправь URL — я сохраню и расставлю теги.\n\n"
             "<b>Команды:</b>\n"
             "/list — последние 10 ссылок\n"
             "/list #java — фильтр по тегу\n"
-            "/search &lt;запрос&gt; — полнотекстовый поиск\n"
-            "/tags — все теги с количеством\n"
-            "/read &lt;id&gt; — отметить как прочитанное\n"
-            "/delete &lt;id&gt; — удалить ссылку"
+            "/search &lt;запрос&gt; — поиск\n"
+            "/tags — все теги\n"
+            "/folders — все папки\n"
+            "/read &lt;id&gt; — отметить прочитанным\n"
+            "/delete &lt;id&gt; — удалить\n\n"
+            "<b>Reply на подтверждение:</b>\n"
+            "openai, ai — добавить теги\n"
+            "+ — отметить прочитанным\n"
+            ": папка — переместить в папку\n"
+            "openai : ai — теги + папка"
         )
         send_message(chat_id, help_text)
 
@@ -175,6 +273,14 @@ def process_update(update: dict) -> None:
     if text.startswith("/"):
         handle_command(chat_id, text)
         return
+
+    # Reply to a save confirmation → edit the saved link
+    reply_to = message.get("reply_to_message")
+    if reply_to and reply_to.get("from", {}).get("id") == int(TELEGRAM_TOKEN.split(":")[0]) if TELEGRAM_TOKEN else False:
+        original_text = (reply_to.get("text") or "").strip()
+        if extract_link_id(original_text):
+            handle_reply(chat_id, text, original_text)
+            return
 
     url = extract_url(text)
     if url:
