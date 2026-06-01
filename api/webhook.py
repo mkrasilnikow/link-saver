@@ -106,12 +106,15 @@ def handle_url(chat_id: int, url: str) -> None:
     from lib.tagger import get_tags_and_type
     from lib import storage
 
+    existing_tags = [t["tag"] for t in storage.get_tags_with_counts()]
+
     parsed = parse_url(url)
     tagged = get_tags_and_type(
         parsed.get("title", ""),
         parsed.get("description", ""),
         parsed.get("content", ""),
         parsed.get("type", ""),
+        existing_tags=existing_tags,
     )
 
     content_type = tagged.get("type") or parsed.get("type", "other")
