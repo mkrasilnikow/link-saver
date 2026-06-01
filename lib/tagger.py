@@ -67,8 +67,10 @@ def get_tags_and_type(
     user_parts = [f"Title: {title}", f"\nBody:\n{body[:MAX_PROMPT_CHARS]}"]
 
     if existing_tags:
-        vocab = ", ".join(existing_tags[:60])
-        user_parts.append(f"\nPreferred tag vocabulary (reuse when relevant): {vocab}")
+        vocab_tags = _filter_vocab(existing_tags)[:60]
+        if vocab_tags:
+            vocab = ", ".join(vocab_tags)
+            user_parts.append(f"\nPreferred tag vocabulary (reuse when relevant): {vocab}")
 
     if content_type_hint and content_type_hint != "other":
         user_parts.append(f"\nContent type hint: {content_type_hint}")
@@ -112,5 +114,16 @@ def get_tags_and_type(
         return {"tags": [], "type": content_type_hint or "other"}
 
 
+_GENERIC_TAGS = frozenset({
+    "other", "general information", "computing", "software", "technology",
+    "технологии", "программирование", "разработка", "development",
+    "api", "backend", "frontend", "web", "cloud", "ai", "data",
+})
+
+
+def _filter_vocab(tags: list[str]) -> list[str]:
+    return [t for t in tags if t not in _GENERIC_TAGS and len(t) > 2]
+
+
 def _log(label: str, value: object) -> None:
-    print(f"[tagger] {label}: {value}", file=sys.stderr, flush=True)
+    print(f"[tagger] {label}: {value}", file=sys.stdout, flush=True)
