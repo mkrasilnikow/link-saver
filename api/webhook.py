@@ -115,6 +115,7 @@ def handle_url(chat_id: int, url: str) -> None:
         parsed.get("content", ""),
         parsed.get("type", ""),
         existing_tags=existing_tags,
+        url=url,
     )
 
     content_type = tagged.get("type") or parsed.get("type", "other")
