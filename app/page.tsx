@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import LinkCard from "@/components/LinkCard";
 import TagFilter from "@/components/TagFilter";
 import SearchBar from "@/components/SearchBar";
@@ -20,6 +21,7 @@ interface Link {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [links, setLinks] = useState<Link[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -109,6 +111,15 @@ export default function Home() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <h1 className="text-2xl font-bold text-gray-900">📚 LinkSaver</h1>
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={async () => {
+                await fetch("/api/auth", { method: "DELETE" });
+                router.push("/login");
+              }}
+              className="text-sm px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors"
+            >
+              Выйти
+            </button>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
