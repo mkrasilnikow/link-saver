@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 const AUTH_COOKIE = "ls_auth";
 
+// Public paths that must stay accessible without auth
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/webhook", "/api/export"];
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (pathname.startsWith("/login") || pathname.startsWith("/api/auth")) {
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
