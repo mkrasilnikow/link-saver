@@ -1,6 +1,6 @@
 # LinkSaver — Telegram Bot + Web UI
 
-Personal link manager with AI auto-tagging. Share any URL to Telegram bot → AI detects tags → saved to Supabase → viewable in Next.js web UI.
+Personal link manager with AI auto-tagging. Share any URL to Telegram bot → AI detects tags → saved to a Google Sheet → viewable in Next.js web UI.
 
 ---
 
@@ -13,9 +13,9 @@ Personal link manager with AI auto-tagging. Share any URL to Telegram bot → AI
 | AI Tagging | Groq API, `llama-3.1-8b-instant` | Free tier, 14k req/day |
 | Link Parsing | httpx + BeautifulSoup4 | og:title, og:description, meta |
 | YouTube | YouTube Data API v3 | Free, 10k units/day |
-| Storage | Supabase (Postgres) | Free tier, 500MB |
+| Storage | Google Sheets (via service account) | Free, one row per link |
 | Web UI | Next.js 14 (App Router) | Deployed on same Vercel project |
-| Auth | Supabase Auth | Google OAuth or magic link |
+| Auth | Password + httpOnly cookie (Next.js middleware) | `AUTH_PASSWORD` / `AUTH_SECRET` |
 
 ---
 
@@ -30,7 +30,7 @@ Personal link manager with AI auto-tagging. Share any URL to Telegram bot → AI
 │   ├── __init__.py
 │   ├── parser.py           # URL parsing: og tags, YouTube API
 │   ├── tagger.py           # Groq API → returns list of tags + content type
-│   └── storage.py          # Supabase client: insert, query, search
+│   └── storage.py          # Google Sheets client: insert, query, search
 ├── app/                    # Next.js App Router
 │   ├── page.tsx            # Main UI: card grid with filters
 │   ├── layout.tsx
@@ -42,7 +42,6 @@ Personal link manager with AI auto-tagging. Share any URL to Telegram bot → AI
 │   ├── LinkCard.tsx        # Card: title, tags, type badge, status
 │   ├── TagFilter.tsx       # Sidebar tag cloud with counts
 │   └── SearchBar.tsx
-├── schema.sql              # Run in Supabase SQL Editor
 ├── vercel.json
 ├── requirements.txt        # Python deps for /api
 ├── package.json            # Next.js deps
@@ -54,7 +53,11 @@ Personal link manager with AI auto-tagging. Share any URL to Telegram bot → AI
 ## Setup Steps
 
 1. **Copy env file**: `cp .env.example .env`
-2. **Supabase** — create project, run `schema.sql` in SQL Editor
+2. **Google Sheets** — create a Google Cloud project, enable the Google Sheets API,
+   create a service account + JSON key, create a sheet and share it (Editor) with the
+   service account email. Put the base64-encoded key in `GOOGLE_SERVICE_ACCOUNT_JSON`
+   and the sheet id in `GOOGLE_SHEET_ID`. The header row is created automatically on
+   the first saved link.
 3. **Groq** — get free API key at console.groq.com
 4. **Telegram** — create bot via @BotFather, get token; get your user_id via @userinfobot
 5. **YouTube API** — enable YouTube Data API v3 in Google Cloud Console (optional)

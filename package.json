@@ -9,7 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
+    "google-auth-library": "^9.14.1",
+    "google-spreadsheet": "^4.1.4",
     "next": "14.2.3",
     "react": "^18",
     "react-dom": "^18"
